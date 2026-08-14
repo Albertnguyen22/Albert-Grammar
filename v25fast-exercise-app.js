@@ -288,6 +288,20 @@ function recordGrammarAttempt(uid,u,ex,options){
  }));
  saveLearningData();window.dispatchEvent(new CustomEvent('agv25-progress-updated'));return true;
 }
+function recordExtraPractice(payload){
+ if(!CURRENT_MISTAKE_USER){clearSharedLegacyMistakes();return false;}
+ payload=payload||{};const uid=String(payload.uid||'');const items=Array.isArray(payload.items)?payload.items:[];
+ if(!uid||!items.length)return false;
+ const meta=unitMeta(uid),category=String(payload.category||grammarCategory(meta)),now=new Date().toISOString();
+ items.forEach((item,index)=>{
+  const questionId=String(item.questionId||index+1),id='extra30::'+uid+'::'+questionId,status=item.correct?'correct':'incorrect',skill=item.skill==='reading'?'reading':'grammar';
+  const p=updateProfileEntry(id,{source:'grammar-in-use',skill,category,uid},status);
+  if(status==='incorrect'){
+   ACTIVE_MISTAKES[id]={id,source:'grammar-in-use',sourceLabel:'Luyện thêm 30 câu',extraPractice:true,uid,bookId:meta.bookId,bookTitle:meta.bookTitle,unit:meta.unit,unitTitle:meta.title,exerciseId:'Luyện thêm 30 câu',exerciseIndex:-1,questionId,questionIndex:Number(item.index||0),questionLabel:Number(item.index||0)+1,slotIndex:0,slotLabel:'',prompt:String(item.prompt||('Câu '+(Number(item.index||0)+1))),userAnswer:String(item.userAnswer||''),correctAnswer:String(item.correctAnswer||''),reason:String(item.reason||'Đáp án của em chưa khớp với đáp án đúng.'),fix:String(item.fix||'Đọc lại lý thuyết của Unit và làm lại câu này.'),trap:String(item.trap||'Đọc toàn bộ nghĩa của câu trước khi chọn đáp án.'),category,skill,taskType:'unit-extra-30',keyPage:'',image:'',wrongCount:p.wrong||1,attempts:p.attempts||1,date:now};
+  }else delete ACTIVE_MISTAKES[id];
+ });
+ saveLearningData();window.dispatchEvent(new CustomEvent('agv25-progress-updated'));return true;
+}
 function legacyAnswer(area,q,i){
  const key=area._quiz.key;if(q.type==='mcq'){const selected=document.querySelector('input[name="'+CSS.escape(key)+'-q'+i+'"]:checked');const user=selected?String(selected.value):'';return {user,correct:String(q.correct),ok:Number(user)===Number(q.correct),displayUser:user?String.fromCharCode(65+Number(user)):'',displayCorrect:String.fromCharCode(65+Number(q.correct))}}
  const el=document.querySelector('[data-text="'+CSS.escape(key)+'-q'+i+'"]'),user=el?el.value:'';const vals=q.answers||[];const ok=vals.some(a=>normBase(a)===normBase(user));return {user,correct:vals[0]||'',ok,displayUser:user,displayCorrect:vals[0]||''};
@@ -322,7 +336,7 @@ function donutHtml(title,parts,center,sub){
  const visible=parts.filter(p=>p.value>0);return '<section class="v25m-chart-card"><h3>'+esc(title)+'</h3><div class="v25m-chart-body"><div class="v25m-donut" style="background:'+donutGradient(parts)+'"><div class="v25m-donut-center"><b>'+esc(center)+'</b><span>'+esc(sub)+'</span></div></div><div class="v25m-legend">'+(visible.length?visible.map((p,i)=>'<div><i style="background:'+(p.color||CHART_COLORS[i%CHART_COLORS.length])+'"></i><span>'+esc(p.label)+'</span><b>'+p.value+'</b></div>').join(''):'<p>Chưa có lỗi để phân tích.</p>')+'</div></div></section>';
 }
 function weakCategoryList(categories){if(!categories.length)return '<div class="empty">Chưa đủ dữ liệu để xác định loại ngữ pháp yếu.</div>';return '<div class="v25m-weak-list">'+categories.slice(0,10).map((c,i)=>'<div class="v25m-weak-row"><div><b>'+(i+1)+'. '+esc(c.label)+'</b><span>'+c.wrong+' lỗi / '+c.attempts+' lượt · đúng '+(c.accuracy==null?'—':c.accuracy+'%')+'</span></div><div class="v25m-bar"><i style="width:'+Math.max(4,c.errorRate||0)+'%"></i></div></div>').join('')+'</div>'}
-function sourceLabel(m){if(m.source==='grammar-in-use')return 'Grammar in Use';if(m.source==='practice')return 'Luyện tập';return 'Luyện tập cũ'}
+function sourceLabel(m){if(m&&m.sourceLabel)return m.sourceLabel;if(m.source==='grammar-in-use')return 'Grammar in Use';if(m.source==='practice')return 'Luyện tập';return 'Luyện tập cũ'}
 function mistakeLocation(m){if(m.source==='grammar-in-use')return esc(m.bookTitle)+' · Unit '+esc(m.unit)+' · Exercise '+esc(m.exerciseId)+' · Câu '+esc(m.questionLabel);if(m.uid)return 'Unit '+esc(String(m.uid).split('-').pop());return esc(topicMeta(m.topic).title)}
 function mistakeCard(m){return '<article class="v25m-card"><div class="v25m-card-head"><div><span class="v25m-badge '+(m.skill==='reading'?'reading':'grammar')+'">'+esc(m.skill==='reading'?'Đọc hiểu / ngữ cảnh':'Ngữ pháp')+'</span><span class="v25m-badge source">'+esc(sourceLabel(m))+'</span></div><small>'+mistakeLocation(m)+'</small></div><h3>'+esc(m.prompt||'Câu cần ôn lại')+'</h3><div class="v25m-answer-grid"><div><b>Đáp án của em</b><p>'+esc(m.userAnswer||'(chưa lưu)')+'</p></div><div><b>Đáp án đúng</b><p>'+esc(m.correctAnswer||'Xem Answer Key')+'</p></div></div><div class="v25m-diagnosis"><p><b>Vì sao sai?</b> '+esc(m.reason||'Cần xem lại bài gốc.')+'</p><p><b>Cách sửa:</b> '+esc(m.fix||'Làm lại câu này sau khi đọc lý thuyết.')+'</p><p><b>Exam Trap:</b> '+esc(m.trap||'Đọc toàn bộ nghĩa của câu trước khi chọn đáp án.')+'</p></div><div class="v25m-card-meta"><span>'+esc(m.category||'Ngữ pháp')+'</span><span>Sai '+(m.wrongCount||1)+' lần</span></div><div class="actions"><button class="btn primary" data-v25m-open="'+esc(m.id)+'">Làm lại đúng câu này</button><button class="btn" data-v25m-remove="'+esc(m.id)+'">Đã nhớ - xóa khỏi Sổ lỗi</button></div></article>'}
 function ensureMistakeStyles(){if(document.getElementById('v25-mistake-dashboard-style'))return;const style=document.createElement('style');style.id='v25-mistake-dashboard-style';style.textContent=`
@@ -345,6 +359,7 @@ function renderMistakeDashboard(){
 function findActiveMistake(id){return ACTIVE_MISTAKES[id]||legacyActiveMistakes().find(x=>x.id===id)||null}
 function openMistake(m){
  if(!m)return;
+ if(m.extraPractice&&window.AGUnit30&&typeof window.AGUnit30.openMistake==='function'){window.AGUnit30.openMistake(m);return;}
  if(m.source==='grammar-in-use'){
   const meta=unitMeta(m.uid),u=window.V24_COMPLETE_DATA&&window.V24_COMPLETE_DATA[m.uid];
   try{state.book=meta.bookId;state.unit=m.uid}catch(e){}
@@ -361,7 +376,7 @@ function openMistake(m){
 function removeMistake(id){if(!CURRENT_MISTAKE_USER)return;if(ACTIVE_MISTAKES[id])delete ACTIVE_MISTAKES[id];saveLearningData();renderMistakeDashboard()}
 function installMistakeDashboard(){
  ensureMistakeStyles();try{window.renderMistakes=renderMistakeDashboard}catch(e){}
- window.AGMistakeBook={setUser:setMistakeUser,getUser:()=>CURRENT_MISTAKE_USER,isReady:()=>!!CURRENT_MISTAKE_USER,render:renderMistakeDashboard};
+ window.AGMistakeBook={setUser:setMistakeUser,getUser:()=>CURRENT_MISTAKE_USER,isReady:()=>!!CURRENT_MISTAKE_USER,render:renderMistakeDashboard,recordExtraPractice};
  window.addEventListener('ag:auth-changed',ev=>setMistakeUser(ev.detail&&ev.detail.user||null));
  if(window.AGGrammarAuth?.getUser)try{setMistakeUser(window.AGGrammarAuth.getUser())}catch(e){}
  document.addEventListener('click',ev=>{
