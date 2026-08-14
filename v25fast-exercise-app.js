@@ -181,10 +181,189 @@ function resultHtml(uid,ex,q,qi,s,si){const k=ansKey(uid,ex.id,qi,si),user=UI.an
  if(st==='reference')return '<div class="v24-result reference"><strong>Đối chiếu với đáp án mẫu</strong>Đây là câu viết mở hoặc đáp án phức hợp. App không đánh dấu sai máy móc; em hãy so sánh cấu trúc và ý nghĩa với Answer Key.<div class="v24-key">'+esc(s.answer||'Xem đáp án mẫu trong sách.')+'</div><span class="v24-meta">Nguồn: '+esc(page)+'</span></div>';
  const fb=explainWrong(uid,ex,q,s,user);
  return '<div class="v24-result incorrect"><strong>✗ Chưa đúng</strong><div>Đáp án của em: <b>'+esc(user||'(chưa nhập)')+'</b></div><div class="v24-key">Đáp án trong sách: '+esc(s.answer)+'</div><div class="v25-why"><b>Vì sao sai?</b>'+esc(fb.reason)+'</div><div class="v25-fix"><b>Cách sửa</b>'+esc(fb.fix)+'</div><div class="v25-exam-trap"><b>Exam Trap cần nhớ</b>'+esc(fb.trap)+'</div><span class="v24-meta">Nguồn: '+esc(page)+'</span></div>'}
-function questionHtml(uid,ex,q,qi,submitted){const statuses=submitted?(q.slots||[]).map((s,si)=>statusFor(UI.answers[ansKey(uid,ex.id,qi,si)]||'',s)):[];const cls=submitted?(statuses.includes('incorrect')?' incorrect':statuses.every(x=>x==='correct')?' correct':' reference'):'';let h='<article class="v24-question'+cls+'"><div class="v24-qhead"><span class="v24-qnum">'+esc(q.label||qi+1)+'</span><b>Câu '+esc(q.label||qi+1)+'</b></div>';
+function questionHtml(uid,ex,q,qi,submitted){const statuses=submitted?(q.slots||[]).map((s,si)=>statusFor(UI.answers[ansKey(uid,ex.id,qi,si)]||'',s)):[];const cls=submitted?(statuses.includes('incorrect')?' incorrect':statuses.every(x=>x==='correct')?' correct':' reference'):'';let h='<article class="v24-question'+cls+'" data-v25-question="'+qi+'" data-v25-exercise="'+esc(ex.id)+'"><div class="v24-qhead"><span class="v24-qnum">'+esc(q.label||qi+1)+'</span><b>Câu '+esc(q.label||qi+1)+'</b></div>';
  if(q.helperText)h+='<div class="v24-helper">'+esc(q.helperText)+'</div>';else h+='<div class="v24-refer"><b>Nội dung câu '+esc(q.label||qi+1)+'</b> nằm trong đề bài chính xác ở cột bên trái. Đọc đúng dòng mang số này, sau đó nhập phần còn thiếu vào ô bên dưới.<br><button type="button" class="v25-question-link" data-v25-source="1">Xem đề bài</button></div>';
  h+='<div class="v24-slots">'+(q.slots||[]).map((s,si)=>inputHtml(uid,ex,q,qi,s,si)+(submitted?resultHtml(uid,ex,q,qi,s,si):'')).join('')+'</div></article>';return h}
 function score(ex){let c=0,w=0,r=0;flattenSlots(ex).forEach(x=>{const st=statusFor(UI.answers[x.key]||'',x.s);if(st==='correct')c++;else if(st==='incorrect')w++;else r++});const d=c+w;return {c,w,r,p:d?Math.round(c*100/d):0}}
+
+/* ---------- Sổ lỗi liên kết với bài tập và bảng phân tích điểm yếu ---------- */
+const MISTAKE_STORE='agv25_mistakes_v3';
+const PROFILE_STORE='agv25_learning_profile_v3';
+const MISTAKE_FILTER_STORE='agv25_mistake_filters_v1';
+function readJson(key,fallback){try{const v=JSON.parse(localStorage.getItem(key)||'null');return v==null?fallback:v}catch(e){return fallback}}
+function writeJson(key,value){try{localStorage.setItem(key,JSON.stringify(value))}catch(e){}}
+let ACTIVE_MISTAKES=readJson(MISTAKE_STORE,{});
+let LEARNING_PROFILE=Object.assign({version:3,slots:{},migrated:{},legacyMigrated:{}},readJson(PROFILE_STORE,{}));
+LEARNING_PROFILE.slots=LEARNING_PROFILE.slots||{};
+LEARNING_PROFILE.migrated=LEARNING_PROFILE.migrated||{};
+LEARNING_PROFILE.legacyMigrated=LEARNING_PROFILE.legacyMigrated||{};
+let MISTAKE_FILTERS=Object.assign({source:'all',skill:'all',category:'all'},readJson(MISTAKE_FILTER_STORE,{}));
+function saveLearningData(){writeJson(MISTAKE_STORE,ACTIVE_MISTAKES);writeJson(PROFILE_STORE,LEARNING_PROFILE)}
+function slotId(uid,eid,qi,si){return 'giu::'+uid+'::'+eid+'::'+qi+'::'+si}
+function legacySlotId(qid){return 'practice::'+qid}
+function unitMeta(uid){
+ const fallback=window.V24_COMPLETE_DATA&&window.V24_COMPLETE_DATA[uid]||{};
+ let bookId=fallback.book||String(uid||'').split('-')[0]||'english',bookTitle=bookId,unit=fallback.unit||'',title='',category='',topicTitle='';
+ try{const books=(typeof V7_SOURCE_BOOKS!=='undefined'&&V7_SOURCE_BOOKS)||[];for(const b of books){const u=(b.units||[]).find(x=>x.uid===uid);if(u){bookId=b.id;bookTitle=b.title||b.short||b.id;unit=u.unit;title=u.title||'';category=u.category||'';topicTitle=u.topicTitle||'';break}}}catch(e){}
+ try{const g=(typeof V12_GUIDES!=='undefined'&&V12_GUIDES&&V12_GUIDES[uid])||null;if(g){title=title||g.sourceTitle||g.titleVi||'';category=category||g.category||''}}catch(e){}
+ return {uid,bookId,bookTitle,unit,title:title||('Unit '+unit),category,topicTitle};
+}
+function grammarCategory(meta){
+ const t=normBase([meta.title,meta.category,meta.topicTitle].filter(Boolean).join(' '));
+ const rules=[
+  [/present perfect continuous/,'Hiện tại hoàn thành tiếp diễn'],[/present perfect/,'Hiện tại hoàn thành'],[/present continuous/,'Hiện tại tiếp diễn'],[/present simple/,'Hiện tại đơn'],
+  [/past perfect continuous/,'Quá khứ hoàn thành tiếp diễn'],[/past perfect/,'Quá khứ hoàn thành'],[/past continuous/,'Quá khứ tiếp diễn'],[/past simple/,'Quá khứ đơn'],
+  [/future perfect continuous|will have been/,'Tương lai hoàn thành tiếp diễn'],[/future perfect|will have done/,'Tương lai hoàn thành'],[/future continuous|will be doing/,'Tương lai tiếp diễn'],[/going to/,'Be going to'],[/future|will and shall|will shall|will would/,'Tương lai và will'],
+  [/subject verb agreement|agreement between subject and verb/,'Hòa hợp chủ ngữ - động từ'],[/passive/,'Câu bị động'],[/reported|reporting|indirect speech/,'Câu tường thuật'],[/condition|wish|if clauses/,'Câu điều kiện và wish'],
+  [/modal|can could|may might|must have to|should ought/,'Động từ khuyết thiếu'],[/question tag|tag question/,'Câu hỏi đuôi'],[/question|auxiliary verb/,'Câu hỏi và trợ động từ'],
+  [/gerund|infinitive|verb ing|to infinitive/,'Danh động từ và động từ nguyên mẫu'],[/relative clause|relative pronoun|whose where whereby/,'Mệnh đề quan hệ'],[/clause|conjunction/,'Mệnh đề và liên từ'],
+  [/article|a an the|zero article/,'Mạo từ'],[/quantifier|some any|much many|few little|all both each every|no none/,'Từ chỉ số lượng'],[/pronoun|determiner/,'Đại từ và từ hạn định'],[/noun|compound noun/,'Danh từ'],
+  [/comparison|comparative|superlative|as as|more most/,'So sánh'],[/adjective|adverb/,'Tính từ và trạng từ'],[/preposition/,'Giới từ'],[/phrasal|two word verb|three word verb/,'Cụm động từ'],
+  [/inversion/,'Đảo ngữ'],[/word order|position of/,'Trật tự từ'],[/subjunctive/,'Thức giả định']
+ ];
+ for(const [re,label] of rules)if(re.test(t))return label;
+ if(meta.topicTitle)return meta.topicTitle;
+ if(meta.category)return meta.category;
+ return 'Cấu trúc ngữ pháp khác';
+}
+function topicMeta(topicId){
+ try{const t=(typeof TOPICS!=='undefined'&&TOPICS||[]).find(x=>x.id===topicId);if(t)return {title:t.title||topicId,category:t.title||'Ngữ pháp tổng hợp'}}catch(e){}
+ return {title:topicId||'Luyện tập tổng hợp',category:'Ngữ pháp tổng hợp'};
+}
+function classifySkill(ex,q){
+ const task=normBase(ex&&ex.taskType||'');
+ const text=normBase([ex&&ex.instructionVi,ex&&ex.instructionEn,ex&&ex.context,q&&q.helperText].filter(Boolean).join(' '));
+ if(/reading|passage|article|story|email|notice|dialogue|conversation|matching|situation|picture|photo/.test(task))return 'reading';
+ if(/read the (text|article|story|email|passage|dialogue|conversation)|complete the (text|article|story|email|passage|dialogue|conversation)|match the|which sentence goes|look at the (picture|photo)|according to the|read the situations|doc doan|doc bai|doc email|doc cau chuyen|doc hoi thoai|ghep|noi cau|tinh huong|tranh minh hoa/.test(text))return 'reading';
+ return 'grammar';
+}
+function classifyLegacySkill(q){
+ const t=normBase([q&&q.prompt,q&&q.set,q&&q.type].filter(Boolean).join(' '));
+ return /read|passage|article|story|dialogue|conversation|match|which sentence|situation|doan van|hoi thoai|tinh huong/.test(t)?'reading':'grammar';
+}
+function promptFor(ex,q,qi,s){
+ const h=String(q&&q.helperText||'').trim();if(h)return h;
+ const task=String(ex&&ex.instructionVi||ex&&ex.instructionEn||'').trim();
+ const label=q&&q.label||qi+1,sub=s&&s.label?(' - mục '+s.label):'';
+ return (task?task+' — ':'')+'Câu '+label+sub+' trong Exercise '+(ex&&ex.id||'');
+}
+function grammarSnapshot(uid,ex){
+ const vals=[];(ex.questions||[]).forEach((q,qi)=>(q.slots||[]).forEach((s,si)=>{if(s.gradeable)vals.push(ansKey(uid,ex.id,qi,si)+'='+normBase(UI.answers[ansKey(uid,ex.id,qi,si)]||''))}));return vals.join('|');
+}
+function updateProfileEntry(id,meta,status){
+ const p=LEARNING_PROFILE.slots[id]||{attempts:0,correct:0,wrong:0,source:meta.source,skill:meta.skill,category:meta.category,uid:meta.uid||'',topic:meta.topic||'',lastDate:''};
+ p.attempts=(p.attempts||0)+1;if(status==='correct')p.correct=(p.correct||0)+1;else if(status==='incorrect')p.wrong=(p.wrong||0)+1;
+ p.source=meta.source;p.skill=meta.skill;p.category=meta.category;p.uid=meta.uid||p.uid||'';p.topic=meta.topic||p.topic||'';p.lastDate=new Date().toISOString();LEARNING_PROFILE.slots[id]=p;return p;
+}
+function recordGrammarAttempt(uid,u,ex,options){
+ options=options||{};const snapshot=grammarSnapshot(uid,ex),submissionKey=exKey(uid,ex.id);
+ if(!options.force&&LEARNING_PROFILE.migrated[submissionKey]===snapshot)return false;
+ LEARNING_PROFILE.migrated[submissionKey]=snapshot;
+ const meta=unitMeta(uid),category=grammarCategory(meta),now=new Date().toISOString();
+ (ex.questions||[]).forEach((q,qi)=>(q.slots||[]).forEach((s,si)=>{
+  if(!s.gradeable)return;const key=ansKey(uid,ex.id,qi,si),user=UI.answers[key]||'',status=statusFor(user,s),id=slotId(uid,ex.id,qi,si),skill=classifySkill(ex,q);
+  const p=updateProfileEntry(id,{source:'grammar-in-use',skill,category,uid},status);
+  if(status==='incorrect'){
+   const fb=explainWrong(uid,ex,q,s,user);
+   ACTIVE_MISTAKES[id]={id,source:'grammar-in-use',sourceLabel:'Grammar in Use',uid,bookId:meta.bookId,bookTitle:meta.bookTitle,unit:meta.unit,unitTitle:meta.title,exerciseId:ex.id,exerciseIndex:(u.exercises||[]).indexOf(ex),questionIndex:qi,questionLabel:q.label||qi+1,slotIndex:si,slotLabel:s.label||'',prompt:promptFor(ex,q,qi,s),userAnswer:user,correctAnswer:s.answer||acceptedValues(s)[0]||'',reason:fb.reason,fix:fb.fix,trap:fb.trap,category,skill,taskType:ex.taskType||'',keyPage:ex.keyPage||'',image:ex.image||'',wrongCount:p.wrong||1,attempts:p.attempts||1,date:now};
+  }else delete ACTIVE_MISTAKES[id];
+ }));
+ saveLearningData();window.dispatchEvent(new CustomEvent('agv25-progress-updated'));return true;
+}
+function legacyAnswer(area,q,i){
+ const key=area._quiz.key;if(q.type==='mcq'){const selected=document.querySelector('input[name="'+CSS.escape(key)+'-q'+i+'"]:checked');const user=selected?String(selected.value):'';return {user,correct:String(q.correct),ok:Number(user)===Number(q.correct),displayUser:user?String.fromCharCode(65+Number(user)):'',displayCorrect:String.fromCharCode(65+Number(q.correct))}}
+ const el=document.querySelector('[data-text="'+CSS.escape(key)+'-q'+i+'"]'),user=el?el.value:'';const vals=q.answers||[];const ok=vals.some(a=>normBase(a)===normBase(user));return {user,correct:vals[0]||'',ok,displayUser:user,displayCorrect:vals[0]||''};
+}
+function recordLegacyQuiz(area){
+ if(!area||!area._quiz||!area._quiz.submitted)return;const qz=area._quiz;
+ const answers=qz.items.map((q,i)=>legacyAnswer(area,q,i).user).join('|');const snapKey='legacy::'+qz.key+'::'+qz.items.map(q=>q.id).join(',');
+ if(LEARNING_PROFILE.legacyMigrated[snapKey]===answers)return;LEARNING_PROFILE.legacyMigrated[snapKey]=answers;
+ qz.items.forEach((q,i)=>{const r=legacyAnswer(area,q,i),id=legacySlotId(q.id),tm=topicMeta(q.topic),category=tm.category,skill=classifyLegacySkill(q),status=r.ok?'correct':'incorrect';const p=updateProfileEntry(id,{source:'practice',skill,category,topic:q.topic||'',uid:q.unitUid||''},status);
+  if(!r.ok){ACTIVE_MISTAKES[id]={id,source:'practice',sourceLabel:'Luyện tập',legacyId:q.id,topic:q.topic||'',uid:q.unitUid||'',prompt:q.prompt||('Câu '+(i+1)),userAnswer:r.displayUser,correctAnswer:typeof qAnswer==='function'?qAnswer(q):r.displayCorrect,reason:q.explanation||'Đáp án của em chưa khớp với đáp án đúng.',fix:'Mở lại bài gốc, đọc phần giải thích rồi làm lại câu này.',trap:q.trap||'Đọc toàn bộ nghĩa của câu trước khi chọn đáp án.',category,skill,wrongCount:p.wrong||1,attempts:p.attempts||1,date:new Date().toISOString()};}
+  else{delete ACTIVE_MISTAKES[id];try{if(typeof state!=='undefined'&&state.mistakes)delete state.mistakes[q.id]}catch(e){}}
+ });
+ try{if(typeof state!=='undefined'&&state.mistakes)writeJson('agv5_mistakes',state.mistakes)}catch(e){}
+ saveLearningData();window.dispatchEvent(new CustomEvent('agv25-progress-updated'));
+}
+function migrateExistingGrammar(){
+ try{Object.entries(UI.submitted||{}).forEach(([key,done])=>{if(!done)return;const pos=key.lastIndexOf('::');if(pos<0)return;const uid=key.slice(0,pos),eid=key.slice(pos+2),u=window.V24_COMPLETE_DATA&&window.V24_COMPLETE_DATA[uid],ex=u&&(u.exercises||[]).find(x=>String(x.id)===String(eid));if(ex)recordGrammarAttempt(uid,u,ex,{force:false})})}catch(e){console.warn('[Sổ lỗi] Không thể nhập dữ liệu cũ',e)}
+}
+function legacyActiveMistakes(){
+ let raw={};try{raw=(typeof state!=='undefined'&&state.mistakes)||readJson('agv5_mistakes',{})||{}}catch(e){raw=readJson('agv5_mistakes',{})||{}}
+ return Object.values(raw).filter(m=>!ACTIVE_MISTAKES[legacySlotId(m.id)]).map(m=>{const tm=topicMeta(m.topic),skill=classifyLegacySkill(m);return {id:'legacy::'+m.id,source:'legacy',sourceLabel:'Luyện tập cũ',legacyId:m.id,topic:m.topic||'',uid:m.unitUid||'',prompt:m.prompt||'',userAnswer:'Không được lưu ở phiên bản cũ',correctAnswer:m.answer||'',reason:m.explanation||'Câu này đã được lưu từ phiên bản Sổ lỗi cũ.',fix:'Làm lại đúng câu này để cập nhật kết quả mới.',trap:m.trap||'Đọc lại cấu trúc của chuyên đề trước khi làm lại.',category:tm.category,skill,date:m.date||'',wrongCount:1,attempts:1}})
+}
+function allActiveMistakes(){return Object.values(ACTIVE_MISTAKES).concat(legacyActiveMistakes()).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')))}
+function buildMetrics(active){
+ const skills={grammar:{label:'Ngữ pháp',attempts:0,correct:0,wrong:0},reading:{label:'Đọc hiểu / ngữ cảnh',attempts:0,correct:0,wrong:0}},cats={};
+ Object.values(LEARNING_PROFILE.slots||{}).forEach(p=>{const sk=skills[p.skill]||skills.grammar;sk.attempts+=p.attempts||0;sk.correct+=p.correct||0;sk.wrong+=p.wrong||0;const c=cats[p.category]||(cats[p.category]={label:p.category,attempts:0,correct:0,wrong:0});c.attempts+=p.attempts||0;c.correct+=p.correct||0;c.wrong+=p.wrong||0});
+ active.filter(m=>m.source==='legacy').forEach(m=>{const sk=skills[m.skill]||skills.grammar;sk.attempts++;sk.wrong++;const c=cats[m.category]||(cats[m.category]={label:m.category,attempts:0,correct:0,wrong:0});c.attempts++;c.wrong++});
+ Object.values(skills).forEach(x=>{x.accuracy=x.attempts?Math.round(x.correct/x.attempts*100):null;x.errorRate=x.attempts?Math.round(x.wrong/x.attempts*100):null});
+ Object.values(cats).forEach(x=>{x.accuracy=x.attempts?Math.round(x.correct/x.attempts*100):null;x.errorRate=x.attempts?Math.round(x.wrong/x.attempts*100):null});
+ const categories=Object.values(cats).filter(x=>x.attempts).sort((a,b)=>(b.wrong-a.wrong)||(b.errorRate-a.errorRate)||(b.attempts-a.attempts));
+ return {skills,categories,totalAttempts:Object.values(skills).reduce((n,x)=>n+x.attempts,0),totalCorrect:Object.values(skills).reduce((n,x)=>n+x.correct,0),totalWrong:Object.values(skills).reduce((n,x)=>n+x.wrong,0)};
+}
+const CHART_COLORS=['#2f72ff','#ff9f43','#7b61ff','#14a06f','#e25252','#00a8c6','#f15f9a','#6f8aa7'];
+function donutGradient(parts){const total=parts.reduce((n,p)=>n+(p.value||0),0);if(!total)return 'conic-gradient(#e5edf6 0 100%)';let at=0;return 'conic-gradient('+parts.map((p,i)=>{const start=at,end=at+(p.value||0)/total*100;at=end;return (p.color||CHART_COLORS[i%CHART_COLORS.length])+' '+start.toFixed(2)+'% '+end.toFixed(2)+'%'}).join(',')+')'}
+function donutHtml(title,parts,center,sub){
+ const visible=parts.filter(p=>p.value>0);return '<section class="v25m-chart-card"><h3>'+esc(title)+'</h3><div class="v25m-chart-body"><div class="v25m-donut" style="background:'+donutGradient(parts)+'"><div class="v25m-donut-center"><b>'+esc(center)+'</b><span>'+esc(sub)+'</span></div></div><div class="v25m-legend">'+(visible.length?visible.map((p,i)=>'<div><i style="background:'+(p.color||CHART_COLORS[i%CHART_COLORS.length])+'"></i><span>'+esc(p.label)+'</span><b>'+p.value+'</b></div>').join(''):'<p>Chưa có lỗi để phân tích.</p>')+'</div></div></section>';
+}
+function weakCategoryList(categories){if(!categories.length)return '<div class="empty">Chưa đủ dữ liệu để xác định loại ngữ pháp yếu.</div>';return '<div class="v25m-weak-list">'+categories.slice(0,10).map((c,i)=>'<div class="v25m-weak-row"><div><b>'+(i+1)+'. '+esc(c.label)+'</b><span>'+c.wrong+' lỗi / '+c.attempts+' lượt · đúng '+(c.accuracy==null?'—':c.accuracy+'%')+'</span></div><div class="v25m-bar"><i style="width:'+Math.max(4,c.errorRate||0)+'%"></i></div></div>').join('')+'</div>'}
+function sourceLabel(m){if(m.source==='grammar-in-use')return 'Grammar in Use';if(m.source==='practice')return 'Luyện tập';return 'Luyện tập cũ'}
+function mistakeLocation(m){if(m.source==='grammar-in-use')return esc(m.bookTitle)+' · Unit '+esc(m.unit)+' · Exercise '+esc(m.exerciseId)+' · Câu '+esc(m.questionLabel);if(m.uid)return 'Unit '+esc(String(m.uid).split('-').pop());return esc(topicMeta(m.topic).title)}
+function mistakeCard(m){return '<article class="v25m-card"><div class="v25m-card-head"><div><span class="v25m-badge '+(m.skill==='reading'?'reading':'grammar')+'">'+esc(m.skill==='reading'?'Đọc hiểu / ngữ cảnh':'Ngữ pháp')+'</span><span class="v25m-badge source">'+esc(sourceLabel(m))+'</span></div><small>'+mistakeLocation(m)+'</small></div><h3>'+esc(m.prompt||'Câu cần ôn lại')+'</h3><div class="v25m-answer-grid"><div><b>Đáp án của em</b><p>'+esc(m.userAnswer||'(chưa lưu)')+'</p></div><div><b>Đáp án đúng</b><p>'+esc(m.correctAnswer||'Xem Answer Key')+'</p></div></div><div class="v25m-diagnosis"><p><b>Vì sao sai?</b> '+esc(m.reason||'Cần xem lại bài gốc.')+'</p><p><b>Cách sửa:</b> '+esc(m.fix||'Làm lại câu này sau khi đọc lý thuyết.')+'</p><p><b>Exam Trap:</b> '+esc(m.trap||'Đọc toàn bộ nghĩa của câu trước khi chọn đáp án.')+'</p></div><div class="v25m-card-meta"><span>'+esc(m.category||'Ngữ pháp')+'</span><span>Sai '+(m.wrongCount||1)+' lần</span></div><div class="actions"><button class="btn primary" data-v25m-open="'+esc(m.id)+'">Làm lại đúng câu này</button><button class="btn" data-v25m-remove="'+esc(m.id)+'">Đã nhớ - xóa khỏi Sổ lỗi</button></div></article>'}
+function ensureMistakeStyles(){if(document.getElementById('v25-mistake-dashboard-style'))return;const style=document.createElement('style');style.id='v25-mistake-dashboard-style';style.textContent=`
+.v25m-hero{display:grid;grid-template-columns:1.3fr .9fr;gap:18px;align-items:center}.v25m-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.v25m-summary>div{background:#fff;border:1px solid var(--line);border-radius:18px;padding:13px;text-align:center}.v25m-summary b{display:block;font:900 28px Nunito;color:var(--blue)}.v25m-summary span{color:var(--muted);font-size:13px;font-weight:800}.v25m-charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:16px 0}.v25m-chart-card{border:1px solid var(--line);border-radius:24px;background:#fff;padding:18px;box-shadow:0 8px 24px rgba(44,101,172,.07)}.v25m-chart-card h3{margin:0 0 14px;font:900 21px Nunito}.v25m-chart-body{display:grid;grid-template-columns:190px 1fr;gap:18px;align-items:center}.v25m-donut{width:190px;height:190px;border-radius:50%;position:relative;box-shadow:inset 0 0 0 1px rgba(23,50,77,.08)}.v25m-donut:after{content:"";position:absolute;inset:36px;border-radius:50%;background:#fff;box-shadow:0 6px 20px rgba(44,101,172,.08)}.v25m-donut-center{position:absolute;inset:48px;z-index:1;display:grid;place-content:center;text-align:center}.v25m-donut-center b{font:900 24px Nunito;color:var(--ink);line-height:1.1}.v25m-donut-center span{font-size:12px;color:var(--muted);line-height:1.25;margin-top:4px}.v25m-legend{display:grid;gap:9px}.v25m-legend>div{display:grid;grid-template-columns:13px 1fr auto;gap:8px;align-items:center}.v25m-legend i{width:13px;height:13px;border-radius:50%}.v25m-legend span{color:#415b73}.v25m-legend b{color:var(--ink)}.v25m-insight{border:1px solid #d8e7f6;border-radius:22px;padding:18px;background:linear-gradient(135deg,#f7fbff,#fffaf0);margin:16px 0}.v25m-insight h3{margin:0 0 8px;font:900 21px Nunito}.v25m-skill-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:12px}.v25m-skill-cards>div{border:1px solid var(--line);background:#fff;border-radius:16px;padding:12px}.v25m-skill-cards b{font-size:20px;color:var(--blue)}.v25m-skill-cards span{display:block;color:var(--muted);font-size:13px}.v25m-weak-list{display:grid;gap:10px}.v25m-weak-row{display:grid;grid-template-columns:minmax(210px,1fr) minmax(150px,.8fr);gap:14px;align-items:center}.v25m-weak-row span{display:block;color:var(--muted);font-size:12px;margin-top:2px}.v25m-bar{height:10px;background:#e8f0f8;border-radius:999px;overflow:hidden}.v25m-bar i{display:block;height:100%;background:linear-gradient(90deg,#ffb34d,#e25252);border-radius:999px}.v25m-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0}.v25m-controls label{font-weight:900}.v25m-controls select{width:100%;margin-top:5px;border:1px solid var(--line);border-radius:14px;padding:10px;background:#fff}.v25m-card{border:1px solid var(--line);border-radius:22px;padding:18px;margin:14px 0;background:#fff;box-shadow:0 8px 22px rgba(44,101,172,.06)}.v25m-card-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.v25m-card-head small{color:var(--muted);font-weight:700;text-align:right}.v25m-badge{display:inline-flex;border-radius:999px;padding:5px 9px;font-size:12px;font-weight:900;margin-right:6px}.v25m-badge.grammar{background:#eaf3ff;color:#185dce}.v25m-badge.reading{background:#fff1d8;color:#965d00}.v25m-badge.source{background:#eefaf5;color:#147052}.v25m-card h3{font:900 18px Nunito;margin:14px 0 10px}.v25m-answer-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.v25m-answer-grid>div{border:1px solid var(--line);border-radius:15px;padding:11px;background:#f8fcff}.v25m-answer-grid p{margin:5px 0 0;white-space:pre-wrap}.v25m-diagnosis{margin-top:10px;border:1px solid #ffd1a0;background:#fff8ea;border-radius:16px;padding:12px}.v25m-diagnosis p{margin:5px 0}.v25m-card-meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;color:var(--muted);font-size:12px;font-weight:800}.v25m-history-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 18px}@media(max-width:900px){.v25m-hero,.v25m-charts{grid-template-columns:1fr}.v25m-chart-body{grid-template-columns:160px 1fr}.v25m-donut{width:160px;height:160px}.v25m-donut:after{inset:30px}.v25m-donut-center{inset:40px}.v25m-controls{grid-template-columns:1fr}.v25m-weak-row{grid-template-columns:1fr}.v25m-answer-grid{grid-template-columns:1fr}}@media(max-width:560px){.v25m-summary{grid-template-columns:1fr}.v25m-chart-body{grid-template-columns:1fr;justify-items:center}.v25m-legend{width:100%}.v25m-card-head{display:block}.v25m-card-head small{display:block;text-align:left;margin-top:8px}.v25m-skill-cards{grid-template-columns:1fr}}
+`;document.head.appendChild(style)}
+function renderMistakeDashboard(){
+ ensureMistakeStyles();migrateExistingGrammar();const active=allActiveMistakes(),metrics=buildMetrics(active),area=document.getElementById('mistake-area');if(!area)return;
+ const skillParts=[{label:'Ngữ pháp',value:metrics.skills.grammar.wrong,color:'#2f72ff'},{label:'Đọc hiểu / ngữ cảnh',value:metrics.skills.reading.wrong,color:'#ff9f43'}];
+ const catParts=metrics.categories.slice(0,7).map((c,i)=>({label:c.label,value:c.wrong,color:CHART_COLORS[i%CHART_COLORS.length]}));
+ const attemptedSkills=Object.values(metrics.skills).filter(x=>x.attempts);const weakest=attemptedSkills.sort((a,b)=>(b.errorRate||0)-(a.errorRate||0))[0];
+ const overallAccuracy=metrics.totalAttempts?Math.round(metrics.totalCorrect/metrics.totalAttempts*100):null;
+ const categories=[...new Set(active.map(x=>x.category).filter(Boolean))].sort();
+ const filtered=active.filter(m=>(MISTAKE_FILTERS.source==='all'||MISTAKE_FILTERS.source===m.source||(MISTAKE_FILTERS.source==='practice'&&(m.source==='practice'||m.source==='legacy')))&&(MISTAKE_FILTERS.skill==='all'||MISTAKE_FILTERS.skill===m.skill)&&(MISTAKE_FILTERS.category==='all'||MISTAKE_FILTERS.category===m.category));
+ area.innerHTML='<section class="lesson-hero v25m-hero"><div><span class="eyebrow">Sổ lỗi thông minh</span><h2>'+active.length+' câu đang cần ôn lại</h2><p>Câu sai trong Grammar in Use và Luyện tập được liên kết về đúng Unit/Exercise. Biểu đồ dựa trên các lần em đã nộp bài.</p></div><div class="v25m-summary"><div><b>'+active.length+'</b><span>câu chưa sửa</span></div><div><b>'+metrics.totalAttempts+'</b><span>lượt đã chấm</span></div><div><b>'+(overallAccuracy==null?'—':overallAccuracy+'%')+'</b><span>độ chính xác</span></div></div></section>'+
+ donutHtml('Đang yếu ngữ pháp hay đọc hiểu?',skillParts,String(metrics.totalWrong),'lỗi đã ghi nhận')+
+ '<div class="v25m-charts">'+donutHtml('Lỗi theo loại ngữ pháp',catParts,String(metrics.categories.length),'nhóm đã luyện')+'<section class="v25m-chart-card"><h3>Loại ngữ pháp cần ưu tiên</h3>'+weakCategoryList(metrics.categories)+'</section></div>'+
+ '<section class="v25m-insight"><h3>Nhận xét hiện tại</h3><p>'+(weakest?('Phần cần ưu tiên là <b>'+esc(weakest.label)+'</b> với tỷ lệ lỗi '+weakest.errorRate+'% trên '+weakest.attempts+' lượt đã chấm.'):'Hãy làm và nộp thêm bài để app xác định chính xác điểm yếu.')+'</p><div class="v25m-skill-cards"><div><b>'+(metrics.skills.grammar.accuracy==null?'—':metrics.skills.grammar.accuracy+'%')+'</b><span>Độ chính xác ngữ pháp · '+metrics.skills.grammar.attempts+' lượt</span></div><div><b>'+(metrics.skills.reading.accuracy==null?'—':metrics.skills.reading.accuracy+'%')+'</b><span>Độ chính xác đọc hiểu/ngữ cảnh · '+metrics.skills.reading.attempts+' lượt</span></div></div><p style="margin-bottom:0;color:var(--muted);font-size:12px">“Đọc hiểu/ngữ cảnh” được nhận diện từ bài có đoạn văn, hội thoại, tình huống, matching hoặc tranh; các bài còn lại được xếp vào ngữ pháp.</p></section>'+
+ '<div class="v25m-history-actions"><button class="btn primary" data-v25m-open-first '+(active.length?'':'disabled')+'>Mở câu sai đầu tiên</button><button class="btn" data-v25m-clear-active '+(active.length?'':'disabled')+'>Xóa các câu trong Sổ lỗi</button><button class="btn" data-v25m-clear-history '+(metrics.totalAttempts?'':'disabled')+'>Xóa lịch sử phân tích</button></div>'+
+ '<div class="v25m-controls"><label>Nguồn<select id="v25m-source"><option value="all">Tất cả</option><option value="grammar-in-use">Grammar in Use</option><option value="practice">Luyện tập</option></select></label><label>Kỹ năng<select id="v25m-skill"><option value="all">Tất cả</option><option value="grammar">Ngữ pháp</option><option value="reading">Đọc hiểu / ngữ cảnh</option></select></label><label>Loại ngữ pháp<select id="v25m-category"><option value="all">Tất cả</option>'+categories.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')+'</select></label></div>'+
+ '<div id="v25m-list">'+(filtered.length?filtered.map(mistakeCard).join(''):'<div class="empty">Không có câu sai phù hợp với bộ lọc.</div>')+'</div>';
+ const s=document.getElementById('v25m-source'),k=document.getElementById('v25m-skill'),c=document.getElementById('v25m-category');if(s)s.value=MISTAKE_FILTERS.source;if(k)k.value=MISTAKE_FILTERS.skill;if(c)c.value=MISTAKE_FILTERS.category;
+}
+function findActiveMistake(id){return ACTIVE_MISTAKES[id]||legacyActiveMistakes().find(x=>x.id===id)||null}
+function openMistake(m){
+ if(!m)return;
+ if(m.source==='grammar-in-use'){
+  const meta=unitMeta(m.uid),u=window.V24_COMPLETE_DATA&&window.V24_COMPLETE_DATA[m.uid];
+  try{state.book=meta.bookId;state.unit=m.uid}catch(e){}
+  if(u){const idx=(u.exercises||[]).findIndex(x=>String(x.id)===String(m.exerciseId));const exIndex=Math.max(0,idx),ex=(u.exercises||[])[exIndex];UI.active[m.uid]=exIndex;if(ex){delete UI.answers[ansKey(m.uid,ex.id,Number(m.questionIndex||0),Number(m.slotIndex||0))];delete UI.submitted[exKey(m.uid,ex.id)]}save()}
+  if(typeof setTab==='function')setTab('grammar');else document.querySelector('[data-tab="grammar"]')?.click();
+  setTimeout(()=>{try{if(typeof renderGrammar==='function')renderGrammar()}catch(e){}setTimeout(()=>{refresh();setTimeout(()=>{const target=document.querySelector('.v24-question[data-v25-question="'+m.questionIndex+'"]');if(target){target.scrollIntoView({behavior:'smooth',block:'center'});target.animate([{boxShadow:'0 0 0 0 rgba(226,82,82,0)'},{boxShadow:'0 0 0 6px rgba(226,82,82,.25)'},{boxShadow:'0 0 0 0 rgba(226,82,82,0)'}],{duration:1100});target.querySelector('input,textarea,select')?.focus()}},260)},100)},40);return;
+ }
+ const qid=m.legacyId||String(m.id||'').replace(/^practice::|^legacy::/,'');
+ try{const q=(typeof QUESTIONS!=='undefined'&&QUESTIONS||[]).find(x=>String(x.id)===String(qid));if(q){if(typeof setTab==='function')setTab('practice');else document.querySelector('[data-tab="practice"]')?.click();setTimeout(()=>{try{renderInlineQuiz([q],'#practice-quiz','mistake-one-'+q.id);document.querySelector('#practice-quiz')?.scrollIntoView({behavior:'smooth',block:'start'})}catch(e){}},60);return}}catch(e){}
+ if(m.uid){const meta=unitMeta(m.uid);try{state.book=meta.bookId;state.unit=m.uid}catch(e){}if(typeof setTab==='function')setTab('grammar');else document.querySelector('[data-tab="grammar"]')?.click();return}
+ if(m.topic){try{state.topic=m.topic;const t=(typeof TOPICS!=='undefined'&&TOPICS||[]).find(x=>x.id===m.topic);if(t&&t.subtopics&&t.subtopics[0])state.lesson=t.subtopics[0].id;if(state.open&&state.open.add)state.open.add(m.topic)}catch(e){}if(typeof setTab==='function')setTab('topics');else document.querySelector('[data-tab="topics"]')?.click();return}
+ if(typeof setTab==='function')setTab('practice');else document.querySelector('[data-tab="practice"]')?.click();
+}
+function removeMistake(id){if(ACTIVE_MISTAKES[id])delete ACTIVE_MISTAKES[id];if(/^legacy::/.test(id)){const legacy=id.replace(/^legacy::/,'');try{if(typeof state!=='undefined'&&state.mistakes)delete state.mistakes[legacy]}catch(e){}const old=readJson('agv5_mistakes',{});delete old[legacy];writeJson('agv5_mistakes',old)}saveLearningData();renderMistakeDashboard()}
+function installMistakeDashboard(){
+ ensureMistakeStyles();try{window.renderMistakes=renderMistakeDashboard}catch(e){}
+ document.addEventListener('click',ev=>{
+  const mt=ev.target.closest('[data-tab="mistakes"]');if(mt){setTimeout(renderMistakeDashboard,30);return}
+  const quizSubmit=ev.target.closest('[data-submit-key]');if(quizSubmit){const area=quizSubmit.closest('[data-quiz-key]');setTimeout(()=>recordLegacyQuiz(area),40);return}
+  const open=ev.target.closest('[data-v25m-open]');if(open){openMistake(findActiveMistake(open.dataset.v25mOpen));return}
+  const rm=ev.target.closest('[data-v25m-remove]');if(rm){removeMistake(rm.dataset.v25mRemove);return}
+  if(ev.target.closest('[data-v25m-open-first]')){openMistake(allActiveMistakes()[0]);return}
+  if(ev.target.closest('[data-v25m-clear-active]')){if(confirm('Xóa toàn bộ câu hiện có trong Sổ lỗi? Lịch sử phân tích vẫn được giữ.')){ACTIVE_MISTAKES={};try{if(typeof state!=='undefined')state.mistakes={}}catch(e){}writeJson('agv5_mistakes',{});saveLearningData();renderMistakeDashboard()}return}
+  if(ev.target.closest('[data-v25m-clear-history]')){if(confirm('Xóa toàn bộ lịch sử điểm đúng/sai dùng cho biểu đồ?')){LEARNING_PROFILE={version:3,slots:{},migrated:{},legacyMigrated:{}};saveLearningData();renderMistakeDashboard()}return}
+ });
+ document.addEventListener('change',ev=>{if(ev.target.id==='v25m-source')MISTAKE_FILTERS.source=ev.target.value;else if(ev.target.id==='v25m-skill')MISTAKE_FILTERS.skill=ev.target.value;else if(ev.target.id==='v25m-category')MISTAKE_FILTERS.category=ev.target.value;else return;writeJson(MISTAKE_FILTER_STORE,MISTAKE_FILTERS);renderMistakeDashboard()});
+ window.addEventListener('agv25-progress-updated',()=>{try{if(typeof state!=='undefined'&&state.tab==='mistakes')renderMistakeDashboard()}catch(e){}});
+ setTimeout(migrateExistingGrammar,450);
+}
+
 function panelHtml(uid,u,ex){
  const id=exKey(uid,ex.id),submitted=!!UI.submitted[id],total=flattenSlots(ex).length,done=answered(ex),pct=total?Math.round(done*100/total):0;
  const imgSrc=(window.V25_EXERCISE_IMAGES&&window.V25_EXERCISE_IMAGES[ex.image])||'';
@@ -193,12 +372,13 @@ function panelHtml(uid,u,ex){
  h+='<div class="v24-progress-row"><div class="v24-progress"><i style="width:'+pct+'%"></i></div><b data-v24-progress>'+done+'/'+total+' mục đã trả lời</b></div>';
  if(submitted){const s=score(ex);h+='<div class="v24-score"><div><b>'+s.p+'%</b><span>điểm tự chấm</span></div><div><b>'+s.c+'</b><span>đúng</span></div><div><b>'+s.w+'</b><span>chưa đúng</span></div><div><b>'+s.r+'</b><span>đáp án mẫu</span></div></div>'}
  h+='<div class="v24-list">'+(ex.questions||[]).map((q,qi)=>questionHtml(uid,ex,q,qi,submitted)).join('')+'</div>';
- h+='<div class="v24-actions"><button class="v24-btn primary" data-v24-submit="1" '+(!allAnswered(ex)?'disabled':'')+'>Nộp bài và chấm theo Answer Key</button>'+(submitted?'<button class="v24-btn" data-v24-retry="1">Làm lại câu sai</button>':'')+'<button class="v24-btn danger" data-v24-reset="1">Xóa toàn bộ bài làm</button></div><p class="v24-legend">Đáp án chỉ hiện sau khi nộp. Khi sai, app phân tích đúng phần sai của câu và đưa Exam Trap tương ứng; không dùng một lời nhắc chung cho mọi câu.</p></div></div></div>';return h}
+ h+='<div class="v24-actions"><button class="v24-btn primary" data-v24-submit="1" '+((submitted||!allAnswered(ex))?'disabled':'')+'>'+(submitted?'Đã chấm theo Answer Key':'Nộp bài và chấm theo Answer Key')+'</button>'+(submitted?'<button class="v24-btn" data-v24-retry="1">Làm lại câu sai</button>':'')+'<button class="v24-btn danger" data-v24-reset="1">Xóa toàn bộ bài làm</button></div><p class="v24-legend">Đáp án chỉ hiện sau khi nộp. Khi sai, app phân tích đúng phần sai của câu và đưa Exam Trap tương ứng; không dùng một lời nhắc chung cho mọi câu.</p></div></div></div>';return h}
 function sectionHtml(){const uid=currentUnit(),u=V24_COMPLETE_DATA[uid];if(!u)return '<section class="v11-exercises v24-exercises"><div class="v24-empty">Không tìm thấy dữ liệu Exercise của Unit này.</div></section>';let ai=Number(UI.active[uid]||0);if(ai<0||ai>=u.exercises.length)ai=0;UI.active[uid]=ai;const tabs=u.exercises.map((ex,i)=>'<button class="v24-tab '+(i===ai?'active ':'')+(UI.submitted[exKey(uid,ex.id)]?'done':'')+'" data-v24-tab="'+i+'">Exercise '+esc(ex.id)+'</button>').join('');return '<section class="v11-exercises v24-exercises" data-v24-unit="'+esc(uid)+'"><div class="v24-head"><h3>Bài tập Grammar in Use - đầy đủ đề bài</h3><p>Mỗi Exercise dùng đúng khung đề từ sách, các ô trả lời xếp theo hàng dọc và chấm bằng Answer Key của chính sách.</p><div class="v24-coverage"><span>✓ '+V24_COMPLETE_STATS.units+'/360 Unit</span><span>✓ '+V24_COMPLETE_STATS.exercises+' Exercise</span><span>✓ '+V24_COMPLETE_STATS.slots+' mục trả lời</span><span>✓ Giải thích lỗi theo từng đáp án</span></div></div><div class="v24-tabs">'+tabs+'</div>'+panelHtml(uid,u,u.exercises[ai])+'</section>'}
 function mount(){const detail=document.querySelector('#unit-detail');if(!detail||!currentUnit())return;const old=detail.querySelector('.v11-exercises,.v19-exercises,.v10-exercises');if(old)old.outerHTML=sectionHtml();else detail.insertAdjacentHTML('beforeend',sectionHtml());document.title='Albert Grammar Việt Nam V25 Fast';if(window.V26_applyExerciseImages)window.V26_applyExerciseImages(detail)}
 function refresh(){const old=document.querySelector('.v24-exercises');if(old){old.outerHTML=sectionHtml();if(window.V26_applyExerciseImages)window.V26_applyExerciseImages(document.querySelector('#unit-detail'))}else mount()}
 const previous=window.renderUnitDetail;window.renderUnitDetail=function(){if(typeof previous==='function')previous.apply(this,arguments);setTimeout(mount,0)};
 window.addEventListener('load',()=>setTimeout(()=>{if(typeof state!=='undefined'&&state&&state.tab==='grammar')mount();const q=document.body;if(!document.querySelector('.v24-zoom'))q.insertAdjacentHTML('beforeend','<div class="v24-zoom"><button aria-label="Đóng">×</button><img alt="Phóng to đề bài"></div>')},180));
-document.addEventListener('click',e=>{const sourceBtn=e.target.closest('[data-v25-source]');if(sourceBtn){const card=document.querySelector('#v25-source-card');if(card){card.scrollIntoView({behavior:'smooth',block:'start'});card.animate([{boxShadow:'0 0 0 0 rgba(57,119,238,0)'},{boxShadow:'0 0 0 6px rgba(57,119,238,.25)'},{boxShadow:'0 0 0 0 rgba(57,119,238,0)'}],{duration:900});}return}const tab=e.target.closest('[data-v24-tab]');if(tab){UI.active[currentUnit()]=Number(tab.dataset.v24Tab);save();refresh();return}const ok=e.target.closest('[data-v24-ok]');if(ok){UI.answers[ok.dataset.v24Ok]='OK';save();refresh();return}const submit=e.target.closest('[data-v24-submit]');if(submit){const u=unitData(),ex=u&&u.exercises[Number(UI.active[currentUnit()]||0)];if(ex&&allAnswered(ex)){UI.submitted[exKey(currentUnit(),ex.id)]=true;save();refresh()}return}const reset=e.target.closest('[data-v24-reset]');if(reset){const u=unitData(),ex=u&&u.exercises[Number(UI.active[currentUnit()]||0)];if(ex&&confirm('Xóa toàn bộ câu trả lời của Exercise này?')){flattenSlots(ex).forEach(x=>delete UI.answers[x.key]);delete UI.submitted[exKey(currentUnit(),ex.id)];save();refresh()}return}const retry=e.target.closest('[data-v24-retry]');if(retry){const u=unitData(),ex=u&&u.exercises[Number(UI.active[currentUnit()]||0)];if(ex){flattenSlots(ex).forEach(x=>{if(statusFor(UI.answers[x.key]||'',x.s)!=='correct')delete UI.answers[x.key]});delete UI.submitted[exKey(currentUnit(),ex.id)];save();refresh()}return}const zoom=e.target.closest('[data-v24-zoom]');if(zoom){const z=document.querySelector('.v24-zoom');z.querySelector('img').src=zoom.dataset.v24Zoom;z.classList.add('open');return}if(e.target.closest('.v24-zoom button')||e.target.classList.contains('v24-zoom'))document.querySelector('.v24-zoom')?.classList.remove('open')});
+document.addEventListener('click',e=>{const sourceBtn=e.target.closest('[data-v25-source]');if(sourceBtn){const card=document.querySelector('#v25-source-card');if(card){card.scrollIntoView({behavior:'smooth',block:'start'});card.animate([{boxShadow:'0 0 0 0 rgba(57,119,238,0)'},{boxShadow:'0 0 0 6px rgba(57,119,238,.25)'},{boxShadow:'0 0 0 0 rgba(57,119,238,0)'}],{duration:900});}return}const tab=e.target.closest('[data-v24-tab]');if(tab){UI.active[currentUnit()]=Number(tab.dataset.v24Tab);save();refresh();return}const ok=e.target.closest('[data-v24-ok]');if(ok){UI.answers[ok.dataset.v24Ok]='OK';save();refresh();return}const submit=e.target.closest('[data-v24-submit]');if(submit){const uid=currentUnit(),u=unitData(),ex=u&&u.exercises[Number(UI.active[uid]||0)];if(ex&&allAnswered(ex)&&!UI.submitted[exKey(uid,ex.id)]){UI.submitted[exKey(uid,ex.id)]=true;save();recordGrammarAttempt(uid,u,ex,{force:true});refresh()}return}const reset=e.target.closest('[data-v24-reset]');if(reset){const u=unitData(),ex=u&&u.exercises[Number(UI.active[currentUnit()]||0)];if(ex&&confirm('Xóa toàn bộ câu trả lời của Exercise này?')){flattenSlots(ex).forEach(x=>delete UI.answers[x.key]);delete UI.submitted[exKey(currentUnit(),ex.id)];save();refresh()}return}const retry=e.target.closest('[data-v24-retry]');if(retry){const u=unitData(),ex=u&&u.exercises[Number(UI.active[currentUnit()]||0)];if(ex){flattenSlots(ex).forEach(x=>{if(statusFor(UI.answers[x.key]||'',x.s)!=='correct')delete UI.answers[x.key]});delete UI.submitted[exKey(currentUnit(),ex.id)];save();refresh()}return}const zoom=e.target.closest('[data-v24-zoom]');if(zoom){const z=document.querySelector('.v24-zoom');z.querySelector('img').src=zoom.dataset.v24Zoom;z.classList.add('open');return}if(e.target.closest('.v24-zoom button')||e.target.classList.contains('v24-zoom'))document.querySelector('.v24-zoom')?.classList.remove('open')});
 document.addEventListener('input',e=>{const f=e.target.closest('[data-v24-answer]');if(!f)return;UI.answers[f.dataset.v24Answer]=f.value;save();const u=unitData(),ex=u&&u.exercises[Number(UI.active[currentUnit()]||0)];if(!ex)return;const sec=f.closest('.v24-exercises'),p=sec&&sec.querySelector('[data-v24-progress]'),bar=sec&&sec.querySelector('.v24-progress i'),btn=sec&&sec.querySelector('[data-v24-submit]');const t=flattenSlots(ex).length,d=answered(ex);if(p)p.textContent=d+'/'+t+' mục đã trả lời';if(bar)bar.style.width=(t?Math.round(d*100/t):0)+'%';if(btn)btn.disabled=!allAnswered(ex)});
+installMistakeDashboard();
 })();
