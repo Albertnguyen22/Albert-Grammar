@@ -26,7 +26,8 @@
     client:null,
     authReady:false,
     sending:false,
-    knowledge:null
+    knowledge:null,
+    pendingProtectedTab:''
   };
 
   function esc(value){
@@ -394,6 +395,54 @@
     }));
   }
 
+
+  function ensureHeaderStyle(){
+    if(document.getElementById('ag-compact-account-style'))return;
+    const style=document.createElement('style');style.id='ag-compact-account-style';style.textContent=`
+      .app-header .top{flex-wrap:wrap}.app-header .brand{min-width:0}.app-header .brand-line{display:flex;align-items:center;gap:10px;min-width:0}.app-header .brand h1{white-space:nowrap}.app-header #ag-header-auth-host{position:relative;display:flex;align-items:center;min-width:0;z-index:40}.ag-head-login,.ag-head-account{height:34px;border:1px solid #c9ddef;background:#fff;border-radius:999px;display:inline-flex;align-items:center;gap:7px;padding:0 10px;color:#234866;font-weight:900;box-shadow:0 4px 12px rgba(44,101,172,.06)}.ag-head-login{cursor:pointer}.ag-head-login:hover,.ag-head-account:hover{border-color:#7faeed;background:#f7fbff}.ag-head-dot{width:8px;height:8px;border-radius:50%;background:#19a66f;box-shadow:0 0 0 3px rgba(25,166,111,.13);flex:0 0 auto}.ag-head-email{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.ag-head-signout{border:0;border-left:1px solid #dce8f4;background:transparent;padding:0 0 0 8px;color:#5c7084;font-weight:900;font-size:12px;cursor:pointer}.ag-head-signout:hover{color:#b42318}.ag-head-popover{position:absolute;left:0;top:calc(100% + 9px);width:min(320px,calc(100vw - 24px));background:#fff;border:1px solid #cfe0f0;border-radius:18px;padding:13px;box-shadow:0 18px 46px rgba(22,59,95,.2);display:none}.ag-head-popover.open{display:block}.ag-head-popover h3{font:900 17px Nunito;margin:0}.ag-head-popover p{font-size:12px;color:#63758a;margin:3px 0 10px;line-height:1.45}.ag-head-popover input{width:100%;border:1px solid #cbdcec;border-radius:12px;padding:9px 10px;background:#fbfdff;margin-top:7px}.ag-head-popover-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:9px}.ag-head-popover button{border:1px solid #c7d9ea;background:#fff;border-radius:11px;padding:8px 9px;font-weight:900;color:#315b84}.ag-head-popover button.primary{background:#2f72ff;border-color:#2f72ff;color:#fff}.ag-head-error{display:none;margin-top:8px;color:#a42929;font-size:12px;line-height:1.4}.ag-head-error.show{display:block}.ag-ai-login-note{display:none;margin-top:10px;border:1px solid #f0d49c;background:#fff8e8;color:#78551a;border-radius:13px;padding:9px 11px;font-size:13px;font-weight:800}.ag-ai-login-note.show{display:block}.ag-ai-login-note button{margin-left:7px;border:0;background:#2f72ff;color:#fff;border-radius:10px;padding:6px 9px;font-weight:900}.v25m-auth-lock{border:1px solid #cfe0f0;border-radius:24px;background:linear-gradient(135deg,#f5fbff,#fffaf0);padding:30px;text-align:center}.v25m-auth-lock .lock-icon{width:54px;height:54px;border-radius:18px;margin:0 auto 12px;display:grid;place-items:center;background:#e8f2ff;color:#2f72ff;font-size:26px}.v25m-auth-lock h2{font:900 25px Nunito;margin:0 0 8px}.v25m-auth-lock p{max-width:620px;margin:0 auto 15px;color:#60758a}.v25m-auth-lock button{border:0;border-radius:14px;background:#2f72ff;color:#fff;padding:10px 15px;font-weight:900}
+      @media(max-width:900px){.app-header .brand-line{gap:7px}.ag-head-email{max-width:120px}.ag-head-account,.ag-head-login{height:32px;padding:0 8px}.ag-head-signout span{display:none}.ag-head-signout{font-size:15px}.app-header .tabs{order:3;width:100%;margin-left:0}}
+      @media(max-width:520px){.app-header .top{gap:8px;padding:10px}.app-header .logo{width:42px;height:42px;border-radius:14px;font-size:21px}.app-header .brand h1{font-size:18px}.ag-head-email{max-width:82px}.ag-head-account{gap:5px}.ag-head-login{font-size:12px}.ag-head-popover{position:fixed;left:12px;right:12px;top:72px;width:auto}}
+    `;document.head.appendChild(style);
+  }
+  function ensureHeaderAuth(){
+    ensureHeaderStyle();
+    let host=document.getElementById('ag-header-auth-host');
+    if(!host){
+      const brand=document.querySelector('.app-header .brand');
+      if(brand){let line=brand.querySelector('.brand-line');if(!line){line=document.createElement('div');line.className='brand-line';const h=brand.querySelector('h1');if(h)line.appendChild(h);brand.appendChild(line)}host=document.createElement('div');host.id='ag-header-auth-host';host.setAttribute('aria-live','polite');line.appendChild(host)}
+    }
+    return host;
+  }
+  function authError(message){const el=document.getElementById('ag-head-auth-error');if(!el)return;el.textContent=String(message||'');el.classList.toggle('show',!!message)}
+  function renderHeaderAuth(){
+    const host=ensureHeaderAuth();if(!host)return;
+    if(AI.user){
+      host.innerHTML=`<div class="ag-head-account" title="Tài khoản Supabase đang đăng nhập"><span class="ag-head-dot" aria-hidden="true"></span><span class="ag-head-email" title="${esc(AI.user.email||'Đã đăng nhập')}">${esc(AI.user.email||'Đã đăng nhập')}</span><button type="button" class="ag-head-signout" id="ag-header-signout" title="Đăng xuất" aria-label="Đăng xuất">↪ <span>Đăng xuất</span></button></div>`;
+      return;
+    }
+    const label=AI.authReady?'Đăng nhập':'Đang kiểm tra…';
+    host.innerHTML=`<button type="button" class="ag-head-login" id="ag-header-login-toggle" aria-expanded="false">${esc(label)}</button><div class="ag-head-popover" id="ag-header-auth-popover" role="dialog" aria-label="Đăng nhập Albert Grammar"><h3>Tài khoản Albert</h3><p>Đăng nhập để dùng External AI và Sổ lỗi riêng của bạn.</p><input id="ag-header-email" type="email" autocomplete="username" placeholder="Email"><input id="ag-header-password" type="password" autocomplete="current-password" placeholder="Mật khẩu"><div class="ag-head-popover-actions"><button type="button" class="primary" id="ag-header-signin">Đăng nhập</button><button type="button" id="ag-header-signup">Đăng ký</button></div><div id="ag-head-auth-error" class="ag-head-error"></div></div>`;
+  }
+  function openAuthPopover(reason){
+    AI.pendingProtectedTab=reason==='mistakes'?'mistakes':AI.pendingProtectedTab;
+    renderHeaderAuth();const pop=document.getElementById('ag-header-auth-popover'),btn=document.getElementById('ag-header-login-toggle');if(pop){pop.classList.add('open');btn?.setAttribute('aria-expanded','true');setTimeout(()=>document.getElementById('ag-header-email')?.focus(),30)}
+  }
+  function closeAuthPopover(){document.getElementById('ag-header-auth-popover')?.classList.remove('open');document.getElementById('ag-header-login-toggle')?.setAttribute('aria-expanded','false')}
+  function notifyAuth(){
+    window.AGGrammarAuth=window.AGGrammarAuth||{};
+    Object.assign(window.AGGrammarAuth,{getUser:()=>AI.user,isSignedIn:()=>!!AI.user,showLogin:openAuthPopover,signOut,client:AI.client});
+    window.dispatchEvent(new CustomEvent('ag:auth-changed',{detail:{user:AI.user}}));
+  }
+  function updateProtectedTabAfterAuth(){
+    if(AI.user&&AI.pendingProtectedTab==='mistakes'){AI.pendingProtectedTab='';setTimeout(()=>{try{window.setTab?.('mistakes')}catch(_err){}},20)}
+    if(!AI.user){try{if(typeof state!=='undefined'&&state.tab==='mistakes')window.setTab?.('topics')}catch(_err){}}
+  }
+  function installProtectedTabGate(){
+    if(window.__AG_MISTAKE_TAB_GATE__)return;window.__AG_MISTAKE_TAB_GATE__=true;
+    const original=window.setTab;
+    if(typeof original==='function')window.setTab=function(tab){if(tab==='mistakes'&&!AI.user){openAuthPopover('mistakes');return false}return original.apply(this,arguments)};
+    document.addEventListener('click',event=>{const tab=event.target.closest?.('.tab[data-tab="mistakes"]');if(tab&&!AI.user){event.preventDefault();event.stopImmediatePropagation();openAuthPopover('mistakes')}},true);
+  }
   function answerHtml(answer,meta){
     const a=normalizeStructured(answer)||plainToStructured(String(answer||''));
     const sections=[];
@@ -424,12 +473,12 @@
     `;document.head.appendChild(style);
   }
 
-  function ensurePanel(){
-    ensureStyle();
+    function ensurePanel(){
+    ensureStyle();ensureHeaderAuth();
     const root=document.querySelector('#view-ai .content');
     if(!root)return null;
     if(!root.querySelector('.ag-ai-shell')){
-      root.innerHTML=`<div class="ag-ai-shell"><aside class="ag-ai-history"><div class="ag-ai-history-head"><div><span class="eyebrow">History</span><b>Lịch sử hỏi đáp</b></div><button type="button" id="ag-ai-new">+ Mới</button></div><div id="ag-ai-history-list" class="ag-ai-history-list"></div><button type="button" class="ag-ai-clear" id="ag-ai-clear">Xóa toàn bộ lịch sử</button></aside><section class="ag-ai-main"><div class="ag-ai-top"><div class="ag-ai-title-row"><div><h2>AI Grammar Tutor</h2><p>Hai nguồn trả lời: kiến thức trong sách và AI ngoài qua Supabase.</p><div id="ag-ai-context" class="ag-ai-context"></div></div><span class="ag-ai-auto">Không cần chọn model</span></div><div class="ag-ai-modes"><button type="button" class="ag-ai-mode" data-ag-ai-mode="local">① Local Knowledge</button><button type="button" class="ag-ai-mode" data-ag-ai-mode="external">② External AI</button></div></div><div id="ag-ai-auth" class="ag-ai-auth hidden"><div class="ag-ai-auth-status"><div><b id="ag-ai-auth-title">Đăng nhập Supabase</b><span id="ag-ai-auth-note">External AI dùng tài khoản ALBERT và model do Supabase tự chọn.</span></div><button type="button" id="ag-ai-signout" class="hidden">Đăng xuất</button></div><div id="ag-ai-auth-fields" class="ag-ai-auth-fields"><input id="ag-ai-email" type="email" autocomplete="username" placeholder="Email"><input id="ag-ai-password" type="password" autocomplete="current-password" placeholder="Mật khẩu"><button type="button" class="primary" id="ag-ai-signin">Đăng nhập</button><button type="button" id="ag-ai-signup">Đăng ký</button></div></div><div id="ag-ai-chat" class="ag-ai-chat"></div><div class="ag-ai-chips"><button class="ag-ai-chip">Phân biệt present perfect và past simple</button><button class="ag-ai-chip">Giải thích câu bị động dễ hiểu</button><button class="ag-ai-chip">Khi nào dùng V-ing và to-infinitive?</button><button class="ag-ai-chip">Phân tích Unit đang mở</button></div><div class="ag-ai-composer"><textarea id="ag-ai-input" placeholder="Hỏi ngữ pháp bằng tiếng Việt. Enter để gửi, Shift+Enter để xuống dòng."></textarea><button type="button" id="grammar-ai-send">Gửi</button></div></section></div>`;
+      root.innerHTML=`<div class="ag-ai-shell"><aside class="ag-ai-history"><div class="ag-ai-history-head"><div><span class="eyebrow">History</span><b>Lịch sử hỏi đáp</b></div><button type="button" id="ag-ai-new">+ Mới</button></div><div id="ag-ai-history-list" class="ag-ai-history-list"></div><button type="button" class="ag-ai-clear" id="ag-ai-clear">Xóa toàn bộ lịch sử</button></aside><section class="ag-ai-main"><div class="ag-ai-top"><div class="ag-ai-title-row"><div><h2>AI Grammar Tutor</h2><p>Hai nguồn trả lời: kiến thức trong sách và AI ngoài qua Supabase.</p><div id="ag-ai-context" class="ag-ai-context"></div></div><span class="ag-ai-auto">Không cần chọn model</span></div><div class="ag-ai-modes"><button type="button" class="ag-ai-mode" data-ag-ai-mode="local">① Local Knowledge</button><button type="button" class="ag-ai-mode" data-ag-ai-mode="external">② External AI</button></div><div id="ag-ai-login-note" class="ag-ai-login-note">Đăng nhập trên thanh tiêu đề để dùng External AI.<button type="button" id="ag-ai-open-login">Đăng nhập</button></div></div><div id="ag-ai-chat" class="ag-ai-chat"></div><div class="ag-ai-chips"><button class="ag-ai-chip">Phân biệt present perfect và past simple</button><button class="ag-ai-chip">Giải thích câu bị động dễ hiểu</button><button class="ag-ai-chip">Khi nào dùng V-ing và to-infinitive?</button><button class="ag-ai-chip">Phân tích Unit đang mở</button></div><div class="ag-ai-composer"><textarea id="ag-ai-input" placeholder="Hỏi ngữ pháp bằng tiếng Việt. Enter để gửi, Shift+Enter để xuống dòng."></textarea><button type="button" id="grammar-ai-send">Gửi</button></div></section></div>`;
     }
     return root;
   }
@@ -444,17 +493,15 @@
     chat.innerHTML=messages.length?messages.map(messageHtml).join(''):'<div class="ag-ai-hint"><b>Hãy đặt câu hỏi đầu tiên.</b><br>Local Knowledge bám dữ liệu ba sách trong app; External AI được bổ sung cùng ngữ cảnh đó.</div>';
     requestAnimationFrame(()=>{chat.scrollTop=chat.scrollHeight});
   }
-  function updateModeUi(){
+    function updateModeUi(){
     document.querySelectorAll('[data-ag-ai-mode]').forEach(btn=>btn.classList.toggle('active',btn.dataset.agAiMode===AI.mode));
-    const auth=document.getElementById('ag-ai-auth');if(auth)auth.classList.toggle('hidden',AI.mode!=='external');
+    const note=document.getElementById('ag-ai-login-note');if(note)note.classList.toggle('show',AI.mode==='external'&&!AI.user);
     const ctx=currentUnitGuide();const el=document.getElementById('ag-ai-context');if(el)el.textContent=ctx?`Ngữ cảnh hiện tại: ${ctx.guide.bookTitle} · Unit ${ctx.guide.unit} · ${ctx.guide.titleVi}`:'Ngữ cảnh hiện tại: toàn bộ 27 chuyên đề và 360 Unit trong app';
     updateAuthUi();
   }
-  function updateAuthUi(){
-    const title=document.getElementById('ag-ai-auth-title'),note=document.getElementById('ag-ai-auth-note'),fields=document.getElementById('ag-ai-auth-fields'),out=document.getElementById('ag-ai-signout');
-    if(!title||!note||!fields||!out)return;
-    if(AI.user){title.textContent=AI.user.email||'Đã đăng nhập';note.textContent='External AI sẵn sàng. Supabase tự chọn model đang bật và tự chuyển model khi cần.';fields.classList.add('hidden');out.classList.remove('hidden');}
-    else{title.textContent=AI.authReady?'Chưa đăng nhập':'Đang kiểm tra phiên đăng nhập…';note.textContent='Local Knowledge vẫn dùng được. Đăng nhập để gọi External AI qua Supabase.';fields.classList.remove('hidden');out.classList.add('hidden');}
+    function updateAuthUi(){
+    renderHeaderAuth();
+    const note=document.getElementById('ag-ai-login-note');if(note)note.classList.toggle('show',AI.mode==='external'&&!AI.user);
   }
   function renderAI(){
     ensurePanel();renderHistory();renderChat();updateModeUi();
@@ -474,23 +521,25 @@
     try{
       const lib=await loadSupabase();
       AI.client=lib.createClient(CONFIG.supabaseUrl.replace(/\/$/,''),CONFIG.supabaseKey,{auth:{storageKey:CONFIG.authStorageKey,persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
-      const {data}=await AI.client.auth.getSession();AI.user=data?.session?.user||null;AI.authReady=true;updateAuthUi();
-      AI.client.auth.onAuthStateChange((_event,session)=>{AI.user=session?.user||null;AI.authReady=true;updateAuthUi();});
-    }catch(error){AI.authReady=true;updateAuthUi();console.error('[Grammar AI]',error);}
+      const sessionResult=await AI.client.auth.getSession();
+      if(sessionResult?.data?.session){const userResult=await AI.client.auth.getUser();AI.user=userResult?.data?.user||sessionResult.data.session.user||null}else AI.user=null;
+      AI.authReady=true;updateAuthUi();notifyAuth();updateProtectedTabAfterAuth();
+      AI.client.auth.onAuthStateChange((_event,session)=>{AI.user=session?.user||null;AI.authReady=true;updateAuthUi();notifyAuth();updateProtectedTabAfterAuth();});
+    }catch(error){AI.authReady=true;AI.user=null;updateAuthUi();notifyAuth();console.error('[Grammar AI]',error);}
   }
   async function signIn(){
     if(!AI.client)await initAuth();
-    const email=document.getElementById('ag-ai-email')?.value.trim()||'',password=document.getElementById('ag-ai-password')?.value||'';
-    if(!email||!password){alert('Hãy nhập email và mật khẩu.');return;}
-    const {error}=await AI.client.auth.signInWithPassword({email,password});if(error)alert(error.message);else updateAuthUi();
+    const email=document.getElementById('ag-header-email')?.value.trim()||'',password=document.getElementById('ag-header-password')?.value||'';
+    if(!email||!password){authError('Hãy nhập email và mật khẩu.');return;}
+    authError('');const {error}=await AI.client.auth.signInWithPassword({email,password});if(error)authError(error.message);else closeAuthPopover();
   }
   async function signUp(){
     if(!AI.client)await initAuth();
-    const email=document.getElementById('ag-ai-email')?.value.trim()||'',password=document.getElementById('ag-ai-password')?.value||'';
-    if(!email||password.length<6){alert('Hãy nhập email và mật khẩu ít nhất 6 ký tự.');return;}
-    const {error}=await AI.client.auth.signUp({email,password});if(error)alert(error.message);else alert('Đã gửi đăng ký. Nếu Supabase bật xác nhận email, hãy kiểm tra hộp thư.');
+    const email=document.getElementById('ag-header-email')?.value.trim()||'',password=document.getElementById('ag-header-password')?.value||'';
+    if(!email||password.length<6){authError('Hãy nhập email và mật khẩu ít nhất 6 ký tự.');return;}
+    authError('');const {error}=await AI.client.auth.signUp({email,password});if(error)authError(error.message);else authError('Đã gửi đăng ký. Nếu hệ thống yêu cầu xác nhận email, hãy kiểm tra hộp thư.');
   }
-  async function signOut(){if(AI.client)await AI.client.auth.signOut();AI.user=null;updateAuthUi();}
+  async function signOut(){if(AI.client)await AI.client.auth.signOut();AI.user=null;AI.pendingProtectedTab='';updateAuthUi();notifyAuth();updateProtectedTabAfterAuth();}
 
   async function externalAnswer(question,thread){
     if(!AI.client)await initAuth();
@@ -518,6 +567,7 @@
   async function send(){
     if(AI.sending)return;
     const input=document.getElementById('ag-ai-input'),question=input?.value.trim()||'';if(!question)return;
+    if(AI.mode==='external'&&!AI.user){openAuthPopover('ai');return;}
     const thread=activeThread();if(!thread.messages.length)thread.title=titleFromQuestion(question);
     thread.messages.push({role:'user',text:question,at:Date.now()});
     const pending={role:'assistant',pending:true,at:Date.now()};thread.messages.push(pending);thread.updatedAt=Date.now();AI.sending=true;saveState();if(input)input.value='';renderAI();
@@ -530,16 +580,15 @@
     finally{AI.sending=false;thread.updatedAt=Date.now();thread.messages=thread.messages.slice(-CONFIG.maxMessages);saveState();renderAI();}
   }
 
-  function setMode(mode){
+    function setMode(mode){
     AI.mode=mode==='external'?'external':'local';saveState();renderAI();
-    if(AI.mode==='external'&&!AI.client)initAuth();
+    if(AI.mode==='external'&&!AI.user)openAuthPopover('ai');
   }
-  function boot(){
-    readState();ensurePanel();
-    window.renderAI=renderAI;
-    window.sendAI=send;
-    renderAI();
-    if(AI.mode==='external')initAuth();
+    function boot(){
+    readState();ensureHeaderStyle();ensureHeaderAuth();ensurePanel();installProtectedTabGate();
+    window.renderAI=renderAI;window.sendAI=send;
+    window.AGGrammarAuth={getUser:()=>AI.user,isSignedIn:()=>!!AI.user,showLogin:openAuthPopover,signOut,client:AI.client};
+    renderAI();initAuth();
   }
 
   document.addEventListener('click',event=>{
@@ -553,6 +602,14 @@
     if(event.target.closest('#ag-ai-signup')){signUp();return;}
     if(event.target.closest('#ag-ai-signout')){signOut();return;}
     const chip=event.target.closest('.ag-ai-chip');if(chip){const input=document.getElementById('ag-ai-input');if(input){input.value=chip.textContent.trim();input.focus();}return;}
+  });
+  document.addEventListener('click',event=>{
+    if(event.target.closest('#ag-header-login-toggle')){const pop=document.getElementById('ag-header-auth-popover');if(pop?.classList.contains('open'))closeAuthPopover();else openAuthPopover();return;}
+    if(event.target.closest('#ag-header-signin')){signIn();return;}
+    if(event.target.closest('#ag-header-signup')){signUp();return;}
+    if(event.target.closest('#ag-header-signout')){signOut();return;}
+    if(event.target.closest('#ag-ai-open-login')||event.target.closest('[data-ag-mistake-login]')){openAuthPopover(event.target.closest('[data-ag-mistake-login]')?'mistakes':'ai');return;}
+    const pop=document.getElementById('ag-header-auth-popover');if(pop?.classList.contains('open')&&!event.target.closest('#ag-header-auth-host'))closeAuthPopover();
   });
   document.addEventListener('keydown',event=>{if(event.target?.id==='ag-ai-input'&&event.key==='Enter'&&!event.shiftKey){event.preventDefault();send();}});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
